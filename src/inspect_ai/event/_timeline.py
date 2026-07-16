@@ -518,6 +518,30 @@ def timeline_build(
                 span_type=None,
                 content=root_content,
             )
+        # Top-level items that don't belong to a phase span — e.g. a
+        # SampleLimitEvent (span_id=None) recorded when an eval is
+        # interrupted — would otherwise be dropped by the strict
+        # init/solvers/scorers partition above. (The no-phase-spans
+        # branch below already keeps them via _build_agent_from_tree.)
+        orphan_nodes = [
+            _tree_item_to_node(item)
+            for item in tree
+            if not (
+                isinstance(item, EventTreeSpan) and top_spans.get(item.name) is item
+            )
+        ]
+        orphan_nodes = [
+            node
+            for node in orphan_nodes
+            if not (isinstance(node, TimelineSpan) and not node.content)
+        ]
+        if orphan_nodes:
+            # Root content is already in timestamp order and sort is stable,
+            # so existing items keep their relative order and orphans land
+            # at the right point.
+            root.content = sorted(
+                [*root.content, *orphan_nodes], key=lambda node: node.start_time()
+            )
     else:
         # No phase spans - treat entire tree as agent
         root = _build_agent_from_tree(tree)

@@ -6,7 +6,8 @@ Each test runs a scenario from generate.py and validates the resulting timeline.
 from typing import Any, Callable
 
 from inspect_ai import eval
-from inspect_ai.event import Timeline, timeline_build
+from inspect_ai.event import SampleLimitEvent, Timeline, timeline_build
+from inspect_ai.event._timeline import TimelineSpan
 
 from .generate import (
     scenario_deep_nesting,
@@ -109,3 +110,31 @@ def test_timeline_deep_utility() -> None:
 
 def test_timeline_parallel_heterogeneous() -> None:
     _run_and_validate(scenario_parallel_heterogeneous, validate_parallel_heterogeneous)
+
+
+def test_timeline_orphan_top_level_events() -> None:
+    """Top-level events outside the phase spans must appear in the timeline.
+
+    E.g. a SampleLimitEvent with span_id=None recorded when an eval is
+    interrupted must not be dropped by the init/solvers/scorers partition.
+    """
+    _, task, model = scenario_simple_agent()
+    log = eval(task, model=model, display="none")[0]
+    assert log.samples and log.samples[0].events
+    limit = SampleLimitEvent(type="time", message="time limit", limit=1)
+    assert limit.span_id is None
+
+    timeline = timeline_build(list(log.samples[0].events) + [limit])
+
+    def event_types(span: TimelineSpan) -> list[str]:
+        types: list[str] = []
+        for item in span.content:
+            if isinstance(item, TimelineSpan):
+                types.extend(event_types(item))
+            else:
+                types.append(item.event.event)
+        return types
+
+    assert "sample_limit" in event_types(timeline.root), (
+        "top-level sample_limit event dropped from timeline"
+    )

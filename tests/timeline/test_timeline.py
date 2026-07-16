@@ -21,6 +21,7 @@ from .generate import (
     scenario_sequential_and_parallel,
     scenario_sequential_run,
     scenario_simple_agent,
+    scenario_solver_with_own_events,
     scenario_utility_agent,
     validate_deep_nesting,
     validate_deep_utility,
@@ -34,6 +35,7 @@ from .generate import (
     validate_sequential_and_parallel,
     validate_sequential_run,
     validate_simple_agent,
+    validate_solver_with_own_events,
     validate_utility_agent,
 )
 
@@ -73,6 +75,10 @@ def test_timeline_utility_agent() -> None:
 
 def test_timeline_sequential_run() -> None:
     _run_and_validate(scenario_sequential_run, validate_sequential_run)
+
+
+def test_timeline_solver_with_own_events() -> None:
+    _run_and_validate(scenario_solver_with_own_events, validate_solver_with_own_events)
 
 
 def test_timeline_parallel_collect() -> None:

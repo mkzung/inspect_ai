@@ -558,9 +558,12 @@ def _classify_spans(root: TimelineSpan) -> None:
 def _unwrap_solver_span(span: EventTreeSpan) -> EventTreeSpan:
     """Unwrap a solver span that merely wraps a single agent child.
 
-    If a solver-type span contains exactly one agent-type child span
-    (and no other spans), replace it with that child. Repeats until
-    no more unwrapping is possible.
+    If a solver-type span's only content is a single agent-type child span
+    (aside from state/store writeback events — the shape produced by running
+    an agent via as_solver), replace it with that child. Repeats until no
+    more unwrapping is possible. A solver with its own events (model calls,
+    info, intermediate scores) alongside the agent keeps them rather than
+    having them dropped.
     """
     while span.type == "solver":
         agent_children = [
@@ -569,6 +572,16 @@ def _unwrap_solver_span(span: EventTreeSpan) -> EventTreeSpan:
             if isinstance(child, EventTreeSpan) and child.type == "agent"
         ]
         if len(agent_children) != 1:
+            break
+        has_own_content = any(
+            child is not agent_children[0]
+            and (
+                isinstance(child, EventTreeSpan)
+                or child.event not in ("state", "store")
+            )
+            for child in span.children
+        )
+        if has_own_content:
             break
         span = agent_children[0]
     return span

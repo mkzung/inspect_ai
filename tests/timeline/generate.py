@@ -29,10 +29,17 @@ from inspect_ai.agent._types import AgentPrompt
 from inspect_ai.dataset import Sample
 from inspect_ai.event import Timeline, timeline_build
 from inspect_ai.event._timeline import TimelineSpan
-from inspect_ai.log import EvalLog
+from inspect_ai.log import EvalLog, transcript
 from inspect_ai.model import ModelOutput, get_model
-from inspect_ai.scorer import includes
-from inspect_ai.solver import generate, system_message
+from inspect_ai.scorer import includes, score
+from inspect_ai.solver import (
+    Generate,
+    Solver,
+    TaskState,
+    generate,
+    solver,
+    system_message,
+)
 from inspect_ai.tool import tool
 from inspect_ai.util import collect
 
@@ -267,6 +274,54 @@ def scenario_sequential_run() -> tuple[str, Task, Any]:
         scorer=includes(),
     )
     return "sequential_run", task, model
+
+
+def scenario_solver_with_own_events() -> tuple[str, Task, Any]:
+    """Solver with its own events alongside an agent run via run().
+
+    The solver logs info, makes its own model call, records an intermediate
+    score, and then runs an inner agent via run(). The solver's own events
+    must survive solver-span unwrapping rather than being dropped in favor
+    of the inner agent's events.
+    """
+
+    @agent
+    def inner() -> Agent:
+        async def execute(state: AgentState) -> AgentState:
+            model = get_model()
+            state.output = await model.generate(state.messages)
+            state.messages.append(state.output.choices[0].message)
+            return state
+
+        return execute
+
+    @solver
+    def worker() -> Solver:
+        async def solve(state: TaskState, generate: Generate) -> TaskState:
+            transcript().info({"phase": "start"})
+            model = get_model()
+            state.output = await model.generate(state.messages)
+            state.messages.append(state.output.choices[0].message)
+            await score(state)
+            result = await run(inner(), state.messages)
+            state.messages = list(result.messages)
+            transcript().info({"phase": "after_inner"})
+            return state
+
+        return solve
+
+    outputs = [
+        ModelOutput.from_content(MODEL, "thinking"),
+        ModelOutput.from_content(MODEL, "2"),
+    ]
+    model = get_model(MODEL, custom_outputs=outputs)
+    task = Task(
+        name="solver_with_own_events",
+        dataset=DATASET,
+        solver=worker(),
+        scorer=includes(),
+    )
+    return "solver_with_own_events", task, model
 
 
 def scenario_parallel_collect() -> tuple[str, Task, Any]:
@@ -868,6 +923,25 @@ def validate_sequential_run(timeline: Timeline) -> None:
     assert_repr_labels(timeline, "main", "explore")
 
 
+def validate_solver_with_own_events(timeline: Timeline) -> None:
+    root = timeline.root
+    inner_spans = find_spans(root, "inner")
+    assert len(inner_spans) >= 1, "Expected 'inner' agent span"
+    direct_events = [
+        item.event.event for item in root.content if not isinstance(item, TimelineSpan)
+    ]
+    assert direct_events.count("info") == 2, (
+        f"solver info events must be preserved: {direct_events}"
+    )
+    assert "score" in direct_events, (
+        f"solver intermediate score must be preserved: {direct_events}"
+    )
+    assert "model" in direct_events, (
+        f"solver's own model call must be preserved: {direct_events}"
+    )
+    assert_repr_labels(timeline, "main", "inner")
+
+
 def validate_parallel_collect(timeline: Timeline) -> None:
     root = timeline.root
     dig_spans = find_spans(root, "dig")
@@ -1011,6 +1085,7 @@ SCENARIOS = [
     scenario_nested_sub_agent,
     scenario_utility_agent,
     scenario_sequential_run,
+    scenario_solver_with_own_events,
     scenario_parallel_collect,
     scenario_handoff_and_as_tool,
     scenario_deep_nesting,

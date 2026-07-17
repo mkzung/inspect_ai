@@ -17,6 +17,9 @@
 - Control Channel: `inspect ctl sample events` now accepts `--type all` (shell-safe spelling of `--type '*'`) and `--from-start` to read the full backlog from the first event.
 - Control Channel: `inspect ctl sample events` gains `--limit N` to cap the events returned per page (combinable with `--from-start`, `--tail`, or a cursor).
 - Control Channel: New `--json` flag for `inspect eval`, `inspect eval-set`, and `inspect eval-retry` emits machine-readable launch-handoff and `done` JSON lines on stdout, so agents can use `inspect ctl` immediately after launch instead of sleep-and-retrying.
+- Control Channel: New `--detach` flag for `inspect eval`, `inspect eval-set`, and `inspect eval-retry` runs the eval in the background — the command prints the launch record and returns once the control endpoint is bound, leaving the eval running detached from the terminal (monitor with `inspect ctl task list`).
+- CLI: `inspect trace anomalies` and `inspect trace http` gain a `--json` flag emitting machine-readable output for agents and shell pipelines; the JSON always includes error/timeout buckets (no `--all` needed).
+- CLI: `inspect trace anomalies` no longer errors when `--filter` matches an action's completion record but not its start record.
 - CLI: `--debug` attach diagnostics ("Waiting for debugger attach") now print to stderr, keeping stdout clean for machine-readable output such as `--json`.
 - Control Channel: `inspect ctl sample show` now reads the sample's summary and error detail in one atomic request, so its output can no longer mix data from different attempts.
 - Control Channel: `inspect ctl sample show` now reports a cancelled sample as `cancelled`/`pending` (matching `sample list`) instead of `error` with the cancellation as its error.
@@ -32,8 +35,10 @@
 - Bugfix: Native compaction now truncates an oversized tool output before summarizing instead of crashing or silently summarizing an error when it would exceed the model's context window. (#3600)
 - Bugfix: React agent compaction now works after a checkpoint resume — the restored conversation is no longer treated as an always-preserved prefix, so compaction shrinks the context again.
 - Bugfix: Nested `score_reducer` and `task_source` values in serialized task args now restore as instances rather than their registered factories. (#4374)
+- Bugfix: Properly resolve relative sample file paths and file URIs on windows (#4502)
 - Viewer: log listing responses include the log dir's canonical URI (`log_dir_uri`) so the viewer can reliably scope its local cache to the directory.
 - Inspect View: Reuse one warm async S3 client and connection pool across requests — for both log reads and directory listings — instead of creating one per operation, eliminating the per-request credential/connection cold-start (e.g. `/log-headers` ~3s -> ~0.3s, `/logs` ~1.5s -> ~0.06s).
+- Model Roles: `resolve_model_roles` now copies a `Model` passed by object (e.g. via `eval(model_roles=...)`) before stamping its role, so roles supplied through the Python API — not just `--model-role` — get a distinct instance and are not misattributed. (#4464)
 
 ## 0.3.247 (16 July 2026)
 
